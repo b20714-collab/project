@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Post Mortem - 과학 수사 시뮬레이션</title>
+    <style>
+        :root {
+            --bg-color: #050811;
+            --card-color: #111625;
+            --neon-blue: #00f2ff;
+            --neon-cyan: #00ffaa;
+            --text-color: #a5b4fc;
+            --pure-white: #ffffff;
+            --penalty-red: #ff3333;
+            --police-yellow: #facc15;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Malgun Gothic', sans-serif; }
+        body { background-color: var(--bg-color); color: var(--text-color); overflow: hidden; height: 100vh; display: flex; justify-content: center; align-items: center; }
+
+        /* 공통 씬 스타일 */
+        .scene { display: none; width: 100%; height: 100vh; flex-direction: column; justify-content: center; align-items: center; padding: 20px; text-align: center; box-sizing: border-box; position: relative; }
+        .scene.active { display: flex; animation: fadeIn 0.4s ease-in-out; }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* 공통 버튼 디자인 */
+        button { background-color: rgba(0, 242, 255, 0.05); border: 2px solid var(--neon-blue); color: var(--neon-blue); padding: 14px 35px; font-size: 16px; font-weight: bold; cursor: pointer; border-radius: 6px; transition: all 0.3s ease; margin-top: 20px; text-transform: uppercase; letter-spacing: 2px; box-shadow: 0 0 10px rgba(0, 242, 255, 0.2); }
+        button:hover { background-color: var(--neon-blue); color: #000; box-shadow: 0 0 25px var(--neon-blue); transform: translateY(-2px); }
+
+        /* 장면 1: 타이틀 & 폴리스라인 애니메이션 */
+        #scene-title { background: radial-gradient(circle at center, #111827 0%, #030712 100%); overflow: hidden; }
+        .police-tape { position: absolute; background: var(--police-yellow); color: #000; font-weight: 900; font-size: 20px; padding: 10px 0; width: 150%; text-align: center; letter-spacing: 5px; transform: rotate(-15deg); top: 15%; left: -25%; box-shadow: 0 5px 15px rgba(0,0,0,0.5); white-space: nowrap; animation: tapeScroll 20s linear infinite; opacity: 0.15; pointer-events: none; }
+        .police-tape.tape-bottom { transform: rotate(15deg); top: auto; bottom: 15%; animation: tapeScrollReverse 20s linear infinite; }
+        @keyframes tapeScroll { from { background-position-x: 0; } to { background-position-x: 1000px; } }
+        @keyframes tapeScrollReverse { from { background-position-x: 1000px; } to { background-position-x: 0; } }
+
+        .title-logo { font-size: 72px; font-weight: 900; color: var(--neon-blue); text-shadow: 0 0 25px rgba(0, 242, 255, 0.8), 0 0 50px rgba(0, 242, 255, 0.4); letter-spacing: 8px; margin-bottom: 15px; font-style: italic; }
+        .title-sub { font-size: 18px; color: #6366f1; margin-bottom: 40px; letter-spacing: 3px; font-weight: bold; }
+        .btn-group { display: flex; gap: 20px; z-index: 5; }
+
+        /* 가이드라인 모달 */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); justify-content: center; align-items: center; z-index: 10; }
+        .modal-content { background: var(--card-color); border: 2px solid var(--neon-blue); padding: 35px; border-radius: 12px; max-width: 500px; text-align: left; box-shadow: 0 0 30px rgba(0, 242, 255, 0.3); }
+        .modal-content h3 { color: var(--neon-blue); margin-bottom: 15px; font-size: 22px; text-shadow: 0 0 10px rgba(0,242,255,0.5); }
+        .modal-content ul { margin-left: 20px; margin-bottom: 25px; line-height: 1.7; color: #94a3b8; }
+        .modal-content li { margin-bottom: 10px; }
+
+        /* 장면 2: 수사관 등록 ID 카드 */
+        .id-card { background: linear-gradient(135deg, #1e1b4b 0%, #111827 100%); border: 2px solid #4338ca; padding: 40px; border-radius: 20px; box-shadow: 0 15px 35px rgba(0,0,0,0.7), inset 0 0 15px rgba(99,102,241,0.2); width: 420px; position: relative; overflow: hidden; }
+        .id-card::before { content: "KCSI"; position: absolute; right: -20px; top: -10px; font-size: 90px; font-weight: 900; color: rgba(255,255,255,0.02); pointer-events: none; }
+        .id-card h2 { color: var(--neon-blue); margin-bottom: 25px; font-size: 22px; letter-spacing: 2px; text-shadow: 0 0 10px rgba(0,242,255,0.4); }
+        .id-card input { width: 100%; padding: 14px; background: #030712; border: 1px solid #374151; color: var(--pure-white); font-size: 16px; border-radius: 8px; text-align: center; outline: none; margin-bottom: 15px; transition: all 0.3s; }
+        .id-card input:focus { border-color: var(--neon-blue); box-shadow: 0 0 15px rgba(0,242,255,0.4); }
+
+        /* 장면 3: 브리핑 */
+        .briefing-box { background: rgba(17, 24, 39, 0.85); border: 1px solid #1f2937; border-left: 5px solid var(--neon-cyan); padding: 40px; text-align: left; max-width: 700px; border-radius: 8px; box-shadow: 0 20px 40px rgba(0,0,0,0.5); backdrop-filter: blur(10px); }
+        .briefing-box h2 { color: var(--neon-cyan); margin-bottom: 25px; font-size: 26px; border-bottom: 1px solid #374151; padding-bottom: 15px; letter-spacing: 1px; text-shadow: 0 0 15px rgba(0,255,170,0.3); }
+        .briefing-line { margin-bottom: 15px; font-size: 16px; line-height: 1.8; color: #cbd5e1; opacity: 0; transform: translateY(15px); animation: slideUpFade 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+        /* 장면 4: 핵심 게임 화면 (현장 그래픽 연출) */
+        #scene-investigation { padding: 15px; flex-direction: row; justify-content: space-between; align-items: stretch; height: 100vh; background: #030712; }
+        .game-main { flex: 1; display: flex; flex-direction: column; height: 100%; padding-right: 20px; }
+        .game-header { display: flex; justify-content: space-between; background: var(--card-color); padding: 15px 25px; border-radius: 10px; border: 1px solid #1e293b; margin-bottom: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        .info-badge { font-size: 16px; color: #94a3b8; font-weight: bold; }
+        
+        /* 어두운 아틀리에 내부 분위기를 내는 실시간 그래픽 맵 */
+        .crime-scene-map { flex: 1; background: radial-gradient(circle at center, #161d30 0%, #090d16 100%); border: 2px solid #1e293b; border-radius: 12px; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 20px; padding: 20px; box-shadow: inset 0 0 40px rgba(0,0,0,0.9); }
+        .evidence-zone { background: rgba(15, 23, 42, 0.6); border: 1px dashed #334155; border-radius: 10px; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 25px; position: relative; transition: all 0.3s ease; overflow: hidden; }
+        .evidence-zone.drag-over { background: rgba(30, 41, 59, 0.8); border-color: var(--neon-blue); box-shadow: 0 0 20px rgba(0,242,255,0.15); }
+        .zone-title { position: absolute; top: 12px; left: 12px; font-size: 12px; color: #64748b; font-weight: bold; background: #020617; padding: 3px 8px; border-radius: 4px; border: 1px solid #1e293b; letter-spacing: 1px; }
+        .zone-status { font-size: 14px; color: #94a3b8; line-height: 1.6; padding: 0 15px; }
+        
+        /* 시약 투하 시 펼쳐지는 극적인 화학 반응 그래픽 연출 효과 */
+        .reaction-effect { width: 100%; height: 100%; position: absolute; top:0; left:0; display:flex; justify-content:center; align-items:center; font-weight:bold; font-size:18px; pointer-events:none; display:none; text-shadow: 0 2px 10px rgba(0,0,0,0.9); letter-spacing: 1px; animation: chemicalGlow 2s infinite alternate; }
+        @keyframes chemicalGlow { from { filter: drop-shadow(0 0 8px currentColor); opacity: 0.9; } to { filter: drop-shadow(0 0 20px currentColor); opacity: 1; } }
+        
+        .zone-luminol { background: radial-gradient(circle, rgba(0, 242, 255, 0.3) 0%, rgba(5, 8, 17, 0.9) 100%); color: #00f2ff; }
+        .zone-ninhydrin { background: radial-gradient(circle, rgba(168, 85, 247, 0.35) 0%, rgba(5, 8, 17, 0.9) 100%); color: #c084fc; }
+        .zone-powder { background: radial-gradient(circle, rgba(226, 232, 240, 0.25) 0%, rgba(5, 8, 17, 0.9) 100%); color: #f1f5f9; }
+        .zone-marquis { background: radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, rgba(5, 8, 17, 0.9) 100%); color: #ddd6fe; }
+
+        /* 사이드바 우측 수사 도구함 */
+        .sidebar-kit { width: 300px; background: var(--card-color); border: 1px solid #1e293b; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; box-shadow: -5px 0 25px rgba(0,0,0,0.3); }
+        .sidebar-kit h3 { font-size: 18px; color: var(--neon-blue); margin-bottom: 15px; border-bottom: 1px solid #1e293b; padding-bottom: 10px; text-align: left; letter-spacing: 1px; }
+        .tools-grid { display: flex; flex-direction: column; gap: 14px; flex: 1; overflow-y: auto; }
+        
+        /* 도구 아이템 카드 디자인 */
+        .tool-card { background: #090d16; border: 1px solid #334155; padding: 15px; border-radius: 8px; cursor: grab; user-select: none; transition: all 0.2s ease; text-align: left; position: relative; }
+        .tool-card:active { cursor: grabbing; transform: scale(0.97); }
+        .tool-card:hover { border-color: var(--neon-blue); background: #0f172a; box-shadow: 0 4px 12px rgba(0,242,255,0.15); }
+        .tool-name { font-weight: bold; color: var(--pure-white); font-size: 14px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+        .tool-desc { font-size: 12px; color: #64748b; line-height: 1.4; }
+
+        /* 퀴즈 오버레이 */
+        .quiz-overlay { display: none; position: fixed; top:0; left:0; width:100%; height:100%; background:rgba(3,7,18,0.9); z-index: 100; justify-content: center; align-items: center; }
+        .quiz-box { background: var(--card-color); border: 2px solid var(--neon-cyan); border-radius: 14px; width: 500px; padding: 35px; box-shadow: 0 0 40px rgba(0,255,170,0.25); text-align: left; }
+        .quiz-tag { background: rgba(0,255,170,0.1); color: var(--neon-cyan); font-size: 12px; font-weight: bold; padding: 5px 10px; border-radius: 4px; display: inline-block; margin-bottom: 15px; letter-spacing: 1px; }
+        .quiz-question { font-size: 18px; font-weight: bold; color: var(--pure-white); margin-bottom: 25px; line-height: 1.5; }
+        .quiz-options { display: flex; flex-direction: column; gap: 12px; }
+        .option-btn { background: #090d16; border: 1px solid #1e293b; color: #cbd5e1; padding: 14px 18px; border-radius: 8px; text-align: left; font-size: 14px; cursor: pointer; transition: all 0.2s; }
+        .option-btn:hover { background: #1e293b; border-color: var(--neon-blue); color: var(--pure-white); }
+
+        /* 페널티 토스트 알림 */
+        .penalty-toast { display: none; position: fixed; top: 30px; left: 50%; transform: translateX(-50%); background: rgba(239, 68, 68, 0.95); color: white; padding: 14px 30px; border-radius: 6px; font-weight: bold; z-index: 200; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid #f87171; animation: shake 0.4s ease-in-out; }
+        @keyframes shake { 0%, 100% { transform: translateX(-50%); } 20%, 60% { transform: translateX(-53%); } 40%, 80% { transform: translateX(-47%); } }
+
+        /* 장면 5: 디지털 수사 수첩 노드 매칭 보드 */
+        #scene-deduction { background: #070a13; display: none; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 40px; }
+        .deduction-container { position: relative; width: 900px; height: 500px; background-color: #0b0f19; background-image: radial-gradient(#1e293b 1px, transparent 1px); background-size: 24px 24px; border: 2px solid #1e293b; border-radius: 16px; margin-top: 25px; box-shadow: inset 0 0 30px rgba(0,0,0,0.8); }
+        .deduction-hint-text { margin-top: 20px; font-size: 16px; color: #64748b; height: 26px; font-weight: bold; }
+        
+        .board-node { position: absolute; background: #111827; border: 2px solid #374151; color: var(--pure-white); padding: 14px 22px; border-radius: 10px; font-size: 14px; font-weight: bold; cursor: pointer; user-select: none; transition: all 0.3s; box-shadow: 0 10px 15px rgba(0,0,0,0.4); display: flex; align-items: center; gap: 10px; z-index: 10; }
+        .board-node:hover { border-color: var(--neon-blue); background: #1f2937; box-shadow: 0 0 15px rgba(0,242,255,0.2); }
+        .board-node.selected { border-color: var(--neon-blue); background: rgba(0,242,255,0.1); box-shadow: 0 0 20px rgba(0,242,255,0.4); }
+        .board-node::before { content: "●"; color: var(--neon-blue); font-size: 12px; }
+        
+        /* 실(연결선) 레이어 */
+        #relation-svg { position: absolute; top:0; left:0; width:100%; height:100%; pointer-events: none; z-index: 5; }
+        .relation-line { stroke: rgba(0, 242, 255, 0.8); stroke-width: 4; stroke-dasharray
